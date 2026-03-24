@@ -1,0 +1,110 @@
+eks_namespace: &eks_namespace "metaflow"          # a variable for the Kubernetes namespace to be used across the configuration
+aws_s3_sysroot: &aws_s3_sysroot "s3://jh-asdf-s3" # a variable for the S3 sysroot
+aws_service_account: &aws_service_account "metaflow-worker-sa" # a variable for the AWS SA name
+metaflow_service_internal_url: &metaflow_service_internal_url "http://metaflow-metaflow-service.metaflow.svc.cluster.local:8080"
+metaflow_backend_url: &metaflow_backend_url "localhost/api"    # this must be changed to the actual URL of ALB
+
+# metaflow-service: Metadata API service configuration
+metaflow-service:
+  enabled: true
+  namespace: *eks_namespace
+  replicaCount: 1
+  service:
+    type: ClusterIP
+    port: 8080
+  serviceAccount:
+    create: false
+    name: *aws_service_account
+  metadatadb: # this is supposed to be overwritten by the values from aws_secret.yaml
+    host: "rds-instance-endpoint.amazonaws.com"
+    name: "metaflow_db"
+    user: "metaflow_admin"
+    password: "password"
+  ingress:
+    enabled: true
+    className: "alb"  # Use AWS ALB Ingress Controller
+    annotations:
+      alb.ingress.kubernetes.io/scheme: "internet-facing"  # Change to "internal" for internal access
+      alb.ingress.kubernetes.io/target-type: "ip"
+      alb.ingress.kubernetes.io/listen-ports: '[{"HTTP": 80}]'
+      alb.ingress.kubernetes.io/healthcheck-path: /ping
+      alb.ingress.kubernetes.io/success-codes: '200'
+    hosts:
+      - host: ""
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: metaflow-metaflow-service
+                port: {number: 8080}
+
+# Metaflow UI: a web interface to interact with Metaflow runs and metadata.
+metaflow-ui:
+  # general settings for both UI static and backend
+  enabled: true
+  namespace: *eks_namespace
+  serviceAccount:
+    create: false
+    name: *aws_service_account
+  # Ingress
+  ingress:
+    enabled: true
+    className: "alb"  # Use AWS ALB Ingress Controller
+    annotations:
+      alb.ingress.kubernetes.io/scheme: "internet-facing"  # Change to "internal" for internal access
+      alb.ingress.kubernetes.io/target-type: "ip"
+      alb.ingress.kubernetes.io/listen-ports: '[{"HTTP": 80}]'
+    hosts:
+      - host: ""  # If empty, use the ALB's DNS name to access the UI. Otherwise, specify a custom domain name and ensure it points to the ALB.
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: metaflow-metaflow-ui-static
+                port: {number: 3000}
+          - path: "/static"
+            pathType: Prefix
+            backend:
+              service:
+                name: metaflow-metaflow-ui-static
+                port: {number: 3000}
+          - path: /api
+            pathType: Prefix
+            backend:
+              service:
+                name: metaflow-metaflow-ui
+                port: {number: 8083}
+
+  # UI Static: serves the frontend assets of the Metaflow UI
+  uiStatic:
+    service:
+      type: ClusterIP
+      port: 3000
+    metaflowUIBackendURL: "/api/"
+    env:
+      - name: METAFLOW_SERVICE       # while this is misleading, this is actually the URL for the UI static to communicate with the UI backend, not the Metaflow service
+        value: *metaflow_backend_url # URL for staticUI to communicate with uiBackend
+
+  # UI Backend: handles API requests from the Metaflow UI and interacts with the Metaflow service and metadata database
+  uiBackend:
+    service:
+      type: ClusterIP
+      port: 8083
+    metadatadb: # this is supposed to be overwritten by the values from aws_secret.yaml
+      host: "rds-instance-endpoint.amazonaws.com"
+      name: "metaflow_db"
+      user: "metaflow_admin"
+      password: "password"
+    metaflowDefaultDatastore: "s3"
+    metaflowDatastoreSysRootS3: *aws_s3_sysroot
+    metaflowServiceURL: *metaflow_service_internal_url # Internal URL for the UI backend to communicate with the Metaflow service
+
+# Disable as using RDS
+postgresql:
+  enabled: false
+  auth:
+    password: metaflow  # Change this in production using secrets management
+    database: metaflow
+    username: metaflow
