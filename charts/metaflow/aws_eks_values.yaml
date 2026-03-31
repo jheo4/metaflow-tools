@@ -2,7 +2,7 @@ eks_namespace: &eks_namespace "${AWS_CLUSTER_NAMESPACE}"          # a variable f
 aws_s3_sysroot: &aws_s3_sysroot "s3://${AWS_S3_BUCKET_NAME}" # a variable for the S3 sysroot
 aws_service_account: &aws_service_account "${AWS_S3_SA_NAME}" # a variable for the AWS SA name
 metaflow_service_internal_url: &metaflow_service_internal_url "http://metaflow-metaflow-service.metaflow.svc.cluster.local:8080"
-metaflow_backend_url: &metaflow_backend_url "localhost/api"    # this must be changed to the actual URL of ALB
+metaflow_backend_url: &metaflow_backend_url "${METAFLOW_UI_URL}/api"    # this must be changed to the actual URL of ALB ingress for metaflow ui
 
 # metaflow-service: Metadata API service configuration
 metaflow-service:
